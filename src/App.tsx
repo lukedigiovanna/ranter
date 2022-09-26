@@ -1,25 +1,39 @@
 import React from 'react';
-import logo from './logo.svg';
-import './App.css';
 
 function App() {
+  const [curPos, setCurPos] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    navigator.geolocation.getCurrentPosition((position: GeolocationPosition) => {
+      setCurPos(position);
+      console.log(position);
+    });
+  }, [])
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <>
+      <h1>
+        Ranter
+      </h1>
+      
+        {
+          curPos != null && 
+            <ul>
+              <li>
+                Latitude: {curPos.coords.latitude}
+              </li>
+              <li>
+                Longitude: {curPos.coords.longitude}
+              </li>
+            </ul>
+        }
+        {
+          curPos == null &&
+          <p>
+            Loading...
+          </p>
+        }
+    </>
   );
 }
 
