@@ -2,67 +2,134 @@ package main
 
 import (
 	"fmt"
-	"bufio"
-	"os"
-	"strings"
-	"io/ioutil"
-	"strconv"
-)
+	"context"
+  
+	firebase "firebase.google.com/go"
+	// "firebase.google.com/go/auth"
+	
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
+
+	
+	"time"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"net/http"
+
+	"math/rand"
+
+  )
+
+type post struct {
+	ID  string `json:"id"`
+	Body string `json:"body"`
+	Latitude float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	PostTime int64 `json:"postDate"`
+}
 
 func main() {
-	fmt.Println("-=-=-=-=-=-=-=-=-=-=-=-=-=-")
-	fmt.Println("Welcome to Data Handler 0.8")
-	fmt.Println("-=-=-=-=-=-=-=-=-=-=-=-=-=-")
-	fmt.Println("This tool can help you read your csv files and tell you cool facts")
-	fmt.Println()
-	fmt.Println("Input the name of a CSV file you would like to use.")
-	fmt.Print("File name: ")
-
-	reader := bufio.NewReader(os.Stdin)
-
-	filename, _ := reader.ReadString('\n')
-	filename = strings.Replace(filename, "\n", "", -1)
-
-	fmt.Printf("You inputted %v\n", filename)
-
-	data, err := ioutil.ReadFile(filename)
-
+	ctx := context.Background()
+	opt := option.WithCredentialsFile("ranter-7a410-firebase-adminsdk-lwi93-14058ac093.json")
+	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
-		fmt.Println(err)
+	//   nil, fmt.Errorf("error initializing app: %v", err)
+		fmt.Println("Error initializing app")	
+		return
+	}
+	client, err := app.Firestore(ctx)
+	if err != nil {
+		fmt.Println("Error creating firestore instance")
 		return
 	}
 
-	rows := strings.Split(string(data), "\n")
+	r := gin.Default()
 
-	headers := strings.Split(rows[0], ",")
-
-	var sums = make([]float64, len(headers))
-
-	numElements := len(rows) - 1
-
-	for i := 1; i < len(rows); i++ {
-		values := strings.Split(rows[i], ", ")
-
-		for j := 0; j < len(sums); j++ {
-			val, err := strconv.ParseFloat(values[j], 32)
-			if err == nil {
-				sums[j] += val
+	r.GET("/api/posts", func(c *gin.Context) {
+		// collect all documents from rants collection
+		iter := client.Collection("rants").Documents(ctx)
+		var posts []post
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
 			}
+			rawData := doc.Data()
+			
+			post := post{
+				Body: rawData["Body"].(string),
+				Latitude: rawData["Latitude"].(float64),
+				Longitude: rawData["Longitude"].(float64),
+				PostTime: rawData["PostTime"].(int64),
+				ID: rawData["ID"].(string),
+			}
+
+			posts = append(posts, post)
+			fmt.Println(post)
 		}
-	}
+		c.JSON(http.StatusOK, gin.H{
+			"posts": posts,
+		})
+	})
 
-	fmt.Printf("Number of rows: %d\n", numElements)
+	r.GET("/api/random-post", func(c *gin.Context) {
+		// query all keys from firestore database
+		iter := client.Collection("rants").Documents(ctx)
+		var posts []post
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
 
-	for _, header := range headers {
+			rawData := doc.Data()
 
-		fmt.Printf("%v\t\t", header)
-	}
+			post := post{
+				Body: rawData["Body"].(string),
+				Latitude: rawData["Latitude"].(float64),
+				Longitude: rawData["Longitude"].(float64),
+				PostTime: rawData["PostTime"].(int64),
+				ID: rawData["ID"].(string),
+			}
 
-	fmt.Println()
+			posts = append(posts, post)
+		}
+		i := rand.Intn(len(posts))
+		c.JSON(http.StatusOK, gin.H{
+			"post": posts[i],
+		})
+	})
 
-	for _, sum := range sums {
-		average := float64(sum) / float64(numElements)
-		fmt.Printf("%f\t", average)
-	}
+	r.POST("/api/posts", func(c *gin.Context) {
+		var json post
+		c.Bind(&json)
+		
+		post := post{
+			ID: "2", 
+			Body: json.Body, 
+			Latitude: json.Latitude, 
+			Longitude: json.Longitude, 
+			PostTime: time.Now().Unix(),
+		}
+
+		client.Collection("rants").Add(ctx, post)
+
+		c.JSON(http.StatusOK, gin.H{
+			"posted": post,
+		})
+	})
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST"},
+		AllowHeaders:     []string{"Origin"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge: 12 * time.Hour,
+	  }))
+
+	r.Run()
+
+	defer client.Close()
 
 }
